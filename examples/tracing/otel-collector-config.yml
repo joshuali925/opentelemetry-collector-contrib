@@ -3,6 +3,8 @@ receivers:
     protocols:
       grpc:
   zipkin:
+  fluentforward:
+    endpoint: 0.0.0.0:8006
 
 exporters:
   jaeger_thrift:
@@ -10,6 +12,9 @@ exporters:
   logging:
   zipkin:
     endpoint: "http://zipkin:9411/api/v2/spans"
+  elasticsearch:
+    endpoints:
+      - "http://elasticsearch:9200"
 
 processors:
   batch:
@@ -25,4 +30,8 @@ service:
     traces:
       receivers: [otlp, zipkin]
       exporters: [zipkin, jaeger_thrift, logging]
+      processors: [batch]
+    logs:
+      receivers: [fluentforward]
+      exporters: [elasticsearch]
       processors: [batch]

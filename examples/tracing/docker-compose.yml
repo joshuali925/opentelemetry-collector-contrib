@@ -1,8 +1,14 @@
 version: "3"
+
+networks:
+  elasticsearch:
+
 services:
   # Jaeger
   jaeger:
     image: jaegertracing/all-in-one:latest
+    networks:
+      - elasticsearch
     ports:
       - "16686:16686"
       - "14268"
@@ -12,8 +18,27 @@ services:
   zipkin:
     image: openzipkin/zipkin
     container_name: zipkin
+    networks:
+      - elasticsearch
     ports:
       - 9411:9411
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+      - cluster.routing.allocation.disk.threshold_enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    networks:
+      - elasticsearch
+    ports:
+      - 9200:9200
 
   otel-collector:
     build:
@@ -22,6 +47,8 @@ services:
     command: ["--config=/etc/otel-collector-config.yml"]
     volumes:
       - ./otel-collector-config.yml:/etc/otel-collector-config.yml
+    networks:
+      - elasticsearch
     ports:
       - "1888:1888"   # pprof extension
       - "8888:8888"   # Prometheus metrics exposed by the collector
@@ -29,9 +56,13 @@ services:
       - "13133:13133" # health_check extension
       - "9411"   # Zipkin receiver
       - "55680:55679" # zpages extension
+      - "24224:24224" # fluentforwarder
+      - "24224:24224/udp" # fluentforwarder
+      - "9200"
     depends_on:
       - jaeger
       - zipkin
+      - elasticsearch
 
   # Expose the frontend on http://localhost:8081
   frontend:
@@ -39,6 +70,8 @@ services:
     command: Frontend
     environment:
       JAVA_OPTS: -Dspring.zipkin.baseUrl=http://otel-collector:9411
+    networks:
+      - elasticsearch
     ports:
       - 8081:8081
     depends_on:
@@ -50,7 +83,26 @@ services:
     command: Backend
     environment:
       JAVA_OPTS: -Dspring.zipkin.baseUrl=http://otel-collector:9411
+    networks:
+      - elasticsearch
     ports:
       - 9000:9000
     depends_on:
       - otel-collector
+
+  # Log generator
+  flog:
+    image: mingrammer/flog:0.4.3
+    # Output 1 log per second in JSON format
+    command: ["--format=json", "--loop", "--delay=1s", "--number=1"]
+    depends_on:
+      - otel-collector
+    networks:
+      - elasticsearch
+    logging:
+      driver: fluentd
+      options:
+        # Allow time for otel-collector to spin up, then forward fluentd logs to the fluentforwarder receiver.
+        fluentd-async-connect: "true"
+        # Use nanosecond precision
+        # fluentd-sub-second-precision: "true"

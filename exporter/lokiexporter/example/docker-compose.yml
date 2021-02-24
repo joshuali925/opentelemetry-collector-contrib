@@ -5,10 +5,10 @@ networks:
 
 services:
   otel-collector:
-#    build:
-#      context: ../../..
-#      dockerfile: exporter/lokiexporter/example/Dockerfile
-    image: otelcontribcol:latest
+    build:
+      context: ../../..
+      dockerfile: exporter/lokiexporter/example/Dockerfile
+    # image: otelcontribcol:latest
     container_name: otel
     command: ["--config=/etc/otel-collector-config.yml"]
     volumes:
